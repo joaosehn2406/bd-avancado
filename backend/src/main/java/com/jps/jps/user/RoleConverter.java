@@ -15,7 +15,7 @@ public class RoleConverter {
 
     @WritingConverter
     public static abstract class Write implements Converter<Role, Integer> {
-        public Integer covert(Role role) {
+        public Integer convert(Role role) {
             return role.getId();
         }
     }
