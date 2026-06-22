@@ -16,6 +16,7 @@ public class EventByCode {
     @PrimaryKeyColumn(type = PrimaryKeyType.CLUSTERED, ordinal = 0)
     private final Instant timestamp;
 
+    private final String state;
     private final String city;
     private final String status;
     private final Double latitude;
@@ -23,9 +24,10 @@ public class EventByCode {
     private final String notes;
 
     @PersistenceCreator
-    public EventByCode(String trackingCode, Instant timestamp, String city, String status, Double latitude, Double longitude, String notes) {
+    public EventByCode(String trackingCode, Instant timestamp, String state, String city, String status, Double latitude, Double longitude, String notes) {
         this.trackingCode = trackingCode;
         this.timestamp = timestamp;
+        this.state = state;
         this.city = city;
         this.status = status;
         this.latitude = latitude;
@@ -33,11 +35,35 @@ public class EventByCode {
         this.notes = notes;
     }
 
-    public String getTrackingCode() { return trackingCode; }
-    public Instant getTimestamp()   { return timestamp; }
-    public String getCity()         { return city; }
-    public String getStatus()       { return status; }
-    public Double getLatitude()     { return latitude; }
-    public Double getLongitude()    { return longitude; }
-    public String getNotes()        { return notes; }
+    public String getTrackingCode() {
+        return trackingCode;
+    }
+
+    public Instant getTimestamp() {
+        return timestamp;
+    }
+
+    public String getState() {
+        return state;
+    }
+
+    public String getCity() {
+        return city;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public Double getLatitude() {
+        return latitude;
+    }
+
+    public Double getLongitude() {
+        return longitude;
+    }
+
+    public String getNotes() {
+        return notes;
+    }
 }
