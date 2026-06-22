@@ -6,7 +6,7 @@ import org.springframework.data.cassandra.core.mapping.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-@Table("packages")
+@Table("shipments")
 public record Shipment(
 
    @PrimaryKey
