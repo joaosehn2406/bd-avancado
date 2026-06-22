@@ -82,6 +82,8 @@ CREATE TABLE users (
 
 Regra geral: **record** quando a partition key é simples. **Classe imutável com `@PersistenceCreator`** quando a partition key é composta.
 
+Entidades nunca são serializadas para o front — toda saída de API passa por um DTO (`*Response`).
+
 ```java
 // ─── Shipment.java — record (partition key simples) ───────────────────────
 @Table("packages")
@@ -375,8 +377,19 @@ src/main/java/com/jps/jps/
 │
 ├── JpsApplication.java
 │
-├── order/
-│   └── Order.java                        @Table("packages") — record
+├── shipment/                             # cadastro de pacotes (admin)
+│   ├── Shipment.java                     @Table("packages") — record
+│   ├── ShipmentRequest.java              DTO de entrada (POST)
+│   ├── ShipmentResponse.java             DTO de saída (admin — inclui sender/recipient)
+│   ├── ShipmentRepository.java
+│   ├── ShipmentService.java
+│   ├── ShipmentController.java           /shipments
+│   └── ShipmentNotFoundException.java    @ResponseStatus(NOT_FOUND)
+│
+├── tracking/                             # rastreio público (sem auth)
+│   ├── TrackingResponse.java             agregado (Shipment + timeline) — sem sender/recipient (LGPD)
+│   ├── TrackingService.java              orquestra ShipmentService + EventByCodeService
+│   └── TrackingController.java           /rastreio/{trackingCode}
 │
 ├── user/
 │   ├── User.java                         @Table("users") — record
@@ -385,15 +398,46 @@ src/main/java/com/jps/jps/
 │
 └── event/
     ├── eventByCode/
-    │   └── EventByCode.java              @Table("events_by_code") — classe imutável
+    │   ├── EventByCode.java              @Table("events_by_code") — classe imutável
+    │   ├── EventByCodeRepository.java    findByTrackingCode(String) — partition key
+    │   ├── EventByCodeService.java       devolve List<TimelineEventResponse>
+    │   └── TimelineEventResponse.java    DTO de um item da timeline (sem trackingCode)
     ├── eventByCity/
     │   └── EventByCity.java              @Table("events_by_city") — classe imutável
     └── eventByStatus/
         └── EventByStatus.java            @Table("events_by_status") — classe imutável
 ```
 
-> **Observação:** `Order` foi usado no lugar de `Shipment` para nomear a entidade de pacotes.
-> `RoleConverter` contém um typo — método `covert` deve ser `convert`.
+> **Observação:** `RoleConverter` contém um typo — método `covert` deve ser `convert`.
+
+---
+
+## Contratos de API públicos
+
+### `GET /rastreio/{trackingCode}` — rastreio público (sem auth)
+
+Resposta agregada combinando pacote + timeline. **Não inclui `sender`/`recipient`** por LGPD —
+quem precisa ver dados pessoais é o admin via `/shipments/{trackingCode}`.
+
+`currentStatus` é derivado do primeiro evento (clustering `timestamp DESC` já entrega ordenado).
+Se o pacote existe mas ainda não tem eventos, `currentStatus = "REGISTERED"` e `events = []`.
+Se o `trackingCode` não existe, retorna `404` via `ShipmentNotFoundException`.
+
+```json
+{
+  "trackingCode": "BR123ABC",
+  "origin": "São Paulo",
+  "destination": "Recife",
+  "createdAt": "2026-06-20T14:00:00Z",
+  "currentStatus": "IN_TRANSIT",
+  "events": [
+    { "timestamp": "...", "city": "Campinas", "status": "IN_TRANSIT",
+      "latitude": -22.9, "longitude": -47.0, "notes": "..." },
+    { "timestamp": "...", "city": "São Paulo", "status": "COLLECTED",
+      "latitude": -23.5, "longitude": -46.6, "notes": "..." }
+  ]
+}
+```
 
 ---
 
