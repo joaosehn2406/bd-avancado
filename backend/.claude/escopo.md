@@ -29,8 +29,9 @@ exatamente o que Cassandra foi projetado para suportar:
 CREATE TABLE events_by_code (
   tracking_code TEXT,
   timestamp     TIMESTAMP,
+  state         TEXT,
   city          TEXT,
-  status        TEXT,     -- COLLECTED | IN_TRANSIT | IN_SEPARATION | OUT_FOR_DELIVERY | DELIVERED
+  status        INT,      -- 0=REGISTERED | 1=COLLECTED | 2=IN_SEPARATION | 3=IN_TRANSIT | 4=OUT_FOR_DELIVERY | 5=DELIVERED
   latitude      DOUBLE,
   longitude     DOUBLE,
   notes         TEXT,
@@ -43,13 +44,13 @@ CREATE TABLE events_by_city (
   date_bucket   DATE,     -- partition por dia — evita partition infinita
   timestamp     TIMESTAMP,
   tracking_code TEXT,
-  status        TEXT,
+  status        INT,
   PRIMARY KEY ((city, date_bucket), timestamp, tracking_code)
 ) WITH CLUSTERING ORDER BY (timestamp DESC);
 
 -- Access pattern 3: pacotes com determinado status num dado dia
 CREATE TABLE events_by_status (
-  status        TEXT,
+  status        INT,
   date_bucket   DATE,
   timestamp     TIMESTAMP,
   tracking_code TEXT,
@@ -72,7 +73,7 @@ CREATE TABLE packages (
 CREATE TABLE users (
   username      TEXT PRIMARY KEY,
   password_hash TEXT,   -- bcrypt
-  role          TEXT    -- ADMIN
+  role          INT     -- 1 = ADMIN
 );
 ```
 
@@ -391,24 +392,24 @@ src/main/java/com/jps/jps/
 │   ├── TrackingService.java              orquestra ShipmentService + EventByCodeService
 │   └── TrackingController.java           /rastreio/{trackingCode}
 │
+├── config/
+│   └── CassandraConfig.java              @Bean CassandraCustomConversions (status + role)
+│
 ├── user/
 │   ├── User.java                         @Table("users") — record
 │   ├── Role.java                         enum com Integer id + fromId()
 │   └── RoleConverter.java                Read (Integer→Role) + Write (Role→Integer)
 │
 └── event/
-    ├── eventByCode/
-    │   ├── EventByCode.java              @Table("events_by_code") — classe imutável
-    │   ├── EventByCodeRepository.java    findByTrackingCode(String) — partition key
-    │   ├── EventByCodeService.java       devolve List<TimelineEventResponse>
-    │   └── TimelineEventResponse.java    DTO de um item da timeline (sem trackingCode)
-    ├── eventByCity/
-    │   └── EventByCity.java              @Table("events_by_city") — classe imutável
-    └── eventByStatus/
-        └── EventByStatus.java            @Table("events_by_status") — classe imutável
+    └── eventByCode/
+        ├── EventByCode.java              @Table("events_by_code") — classe imutável
+        ├── EventByCodeRepository.java    findByTrackingCode(String) — partition key
+        ├── EventByCodeService.java       devolve List<TimelineEventResponse>
+        ├── TimelineEventResponse.java    DTO de um item da timeline (sem trackingCode)
+        ├── EventStatus.java              enum com (id, name em pt-BR) + fromId
+        ├── EventStatusResponse.java      DTO {id, name} devolvido ao front
+        └── EventStatusConverter.java     Read INT→enum + Write enum→INT
 ```
-
-> **Observação:** `RoleConverter` contém um typo — método `covert` deve ser `convert`.
 
 ---
 
@@ -429,15 +430,33 @@ Se o `trackingCode` não existe, retorna `404` via `ShipmentNotFoundException`.
   "origin": "São Paulo",
   "destination": "Recife",
   "createdAt": "2026-06-20T14:00:00Z",
-  "currentStatus": "IN_TRANSIT",
+  "currentStatus": { "id": 3, "name": "Em trânsito" },
   "events": [
-    { "timestamp": "...", "city": "Campinas", "status": "IN_TRANSIT",
+    { "timestamp": "...", "state": "SP", "city": "Campinas",
+      "status": { "id": 3, "name": "Em trânsito" },
       "latitude": -22.9, "longitude": -47.0, "notes": "..." },
-    { "timestamp": "...", "city": "São Paulo", "status": "COLLECTED",
+    { "timestamp": "...", "state": "SP", "city": "São Paulo",
+      "status": { "id": 1, "name": "Coletado" },
       "latitude": -23.5, "longitude": -46.6, "notes": "..." }
   ]
 }
 ```
+
+Status é serializado como objeto `{id, name}`. O `name` vai em português (pronto para
+exibir no front). Os possíveis valores estão no enum `EventStatus`:
+
+| id | constant         | name (pt-BR)         |
+|----|------------------|----------------------|
+| 0  | REGISTERED       | Registrado           |
+| 1  | COLLECTED        | Coletado             |
+| 2  | IN_SEPARATION    | Em separação         |
+| 3  | IN_TRANSIT       | Em trânsito          |
+| 4  | OUT_FOR_DELIVERY | Saiu para entrega    |
+| 5  | DELIVERED        | Entregue             |
+
+No Cassandra, status é armazenado como `INT` (id). A conversão `INT ↔ ShipmentStatus`
+acontece via `ShipmentStatusConverter` registrado em `CassandraConfig`. Mesmo padrão
+vale para `Role` (também `INT`).
 
 ---
 
