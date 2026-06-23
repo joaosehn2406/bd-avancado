@@ -1,5 +1,6 @@
 package com.jps.jps.tracking;
 
+import com.jps.jps.event.eventByCode.EventStatusResponse;
 import com.jps.jps.event.eventByCode.TimelineEventResponse;
 
 import java.time.Instant;
@@ -10,6 +11,6 @@ public record TrackingResponse(
         String origin,
         String destination,
         Instant createdAt,
-        String currentStatus,
+        EventStatusResponse currentStatus,
         List<TimelineEventResponse> events
 ) {}

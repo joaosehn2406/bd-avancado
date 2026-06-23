@@ -1,6 +1,8 @@
 package com.jps.jps.tracking;
 
 import com.jps.jps.event.eventByCode.EventByCodeService;
+import com.jps.jps.event.eventByCode.EventStatus;
+import com.jps.jps.event.eventByCode.EventStatusResponse;
 import com.jps.jps.event.eventByCode.TimelineEventResponse;
 import com.jps.jps.shipment.Shipment;
 import com.jps.jps.shipment.ShipmentService;
@@ -10,8 +12,6 @@ import java.util.List;
 
 @Service
 public class TrackingService {
-
-    private static final String DEFAULT_STATUS = "REGISTERED";
 
     private final ShipmentService shipmentService;
     private final EventByCodeService eventByCodeService;
@@ -25,7 +25,9 @@ public class TrackingService {
         Shipment shipment = shipmentService.findByTrackingCode(trackingCode);
         List<TimelineEventResponse> events = eventByCodeService.findByTrackingCode(trackingCode);
 
-        String currentStatus = events.isEmpty() ? DEFAULT_STATUS : events.get(0).status();
+        EventStatusResponse currentStatus = events.isEmpty()
+                ? EventStatusResponse.from(EventStatus.REGISTERED)
+                : events.get(0).status();
 
         return new TrackingResponse(
                 shipment.trackingCode(),
