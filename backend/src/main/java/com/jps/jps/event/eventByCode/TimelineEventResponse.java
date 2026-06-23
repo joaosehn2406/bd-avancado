@@ -6,7 +6,7 @@ public record TimelineEventResponse(
         Instant timestamp,
         String state,
         String city,
-        String status,
+        EventStatusResponse status,
         Double latitude,
         Double longitude,
         String notes
@@ -16,7 +16,7 @@ public record TimelineEventResponse(
                 event.getTimestamp(),
                 event.getState(),
                 event.getCity(),
-                event.getStatus(),
+                EventStatusResponse.from(event.getStatus()),
                 event.getLatitude(),
                 event.getLongitude(),
                 event.getNotes()

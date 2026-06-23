@@ -18,13 +18,13 @@ public class EventByCode {
 
     private final String state;
     private final String city;
-    private final String status;
+    private final EventStatus status;
     private final Double latitude;
     private final Double longitude;
     private final String notes;
 
     @PersistenceCreator
-    public EventByCode(String trackingCode, Instant timestamp, String state, String city, String status, Double latitude, Double longitude, String notes) {
+    public EventByCode(String trackingCode, Instant timestamp, String state, String city, EventStatus status, Double latitude, Double longitude, String notes) {
         this.trackingCode = trackingCode;
         this.timestamp = timestamp;
         this.state = state;
@@ -51,7 +51,7 @@ public class EventByCode {
         return city;
     }
 
-    public String getStatus() {
+    public EventStatus getStatus() {
         return status;
     }
 
