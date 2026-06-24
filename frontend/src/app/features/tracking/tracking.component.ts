@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, AfterViewChecked, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewChecked, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { TrackingService } from '../../core/services/tracking.service';
@@ -18,9 +18,9 @@ export class TrackingComponent implements OnInit, OnDestroy, AfterViewChecked {
   private readonly router = inject(Router);
   private readonly trackingService = inject(TrackingService);
 
-  tracking: TrackingResponse | null = null;
-  loading = true;
-  errorMessage: string | null = null;
+  readonly tracking = signal<TrackingResponse | null>(null);
+  readonly loading = signal(true);
+  readonly errorMessage = signal<string | null>(null);
 
   private map: L.Map | null = null;
   private mapInitialized = false;
@@ -32,7 +32,7 @@ export class TrackingComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   ngAfterViewChecked() {
-    if (this.tracking && !this.mapInitialized) {
+    if (this.tracking() && !this.mapInitialized) {
       const eventsWithCoords = this.eventsWithCoords();
       if (eventsWithCoords.length > 0) {
         this.initMap(eventsWithCoords);
@@ -48,15 +48,15 @@ export class TrackingComponent implements OnInit, OnDestroy, AfterViewChecked {
   private loadTracking(code: string) {
     this.trackingService.getByCode(code).subscribe({
       next: (data) => {
-        this.tracking = data;
-        this.loading = false;
+        this.tracking.set(data);
+        this.loading.set(false);
         this.connectSSE(code);
       },
       error: (err) => {
-        this.loading = false;
-        this.errorMessage = err.status === 404
+        this.loading.set(false);
+        this.errorMessage.set(err.status === 404
           ? 'Código de rastreio não encontrado.'
-          : 'Erro ao consultar o servidor. Tente novamente.';
+          : 'Erro ao consultar o servidor. Tente novamente.');
       }
     });
   }
@@ -65,12 +65,13 @@ export class TrackingComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.eventSource = this.trackingService.openStream(code);
     this.eventSource.onmessage = (event) => {
       const newEvent: TimelineEvent = JSON.parse(event.data);
-      if (this.tracking) {
-        this.tracking = {
-          ...this.tracking,
+      const current = this.tracking();
+      if (current) {
+        this.tracking.set({
+          ...current,
           currentStatus: newEvent.status,
-          events: [newEvent, ...this.tracking.events]
-        };
+          events: [newEvent, ...current.events]
+        });
         this.mapInitialized = false;
       }
     };
@@ -78,7 +79,7 @@ export class TrackingComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   eventsWithCoords(): TimelineEvent[] {
-    return (this.tracking?.events ?? [])
+    return (this.tracking()?.events ?? [])
       .filter(e => e.latitude != null && e.longitude != null)
       .slice()
       .reverse();
