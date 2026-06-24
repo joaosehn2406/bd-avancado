@@ -2,10 +2,12 @@
 
 ## Visão Geral
 
-Sistema de rastreio de packages modelado para explorar as forças do Apache Cassandra:
+Sistema de rastreio de encomendas modelado para explorar as forças do Apache Cassandra:
 append-only, alta disponibilidade de leitura por chave, e múltiplos access patterns via tabelas denormalizadas.
 
-Stack: **Java (Spring Boot) · Angular · Cassandra**
+Stack: **Java (Spring Boot) · Angular 21 · Cassandra**
+
+**Nota:** autenticação/JWT foi removida do escopo. O painel admin é público.
 
 ---
 
@@ -24,56 +26,53 @@ exatamente o que Cassandra foi projetado para suportar:
 
 ## Modelo de Tabelas Cassandra
 
+> **Atenção:** Spring Data Cassandra auto-schema converte campos camelCase para
+> **lowercase sem underscore** — `dateBucket` → `datebucket`, `trackingCode` → `trackingcode`.
+> As queries `@Query` e os CQL de referência abaixo usam os nomes reais das colunas.
+
 ```cql
 -- Access pattern 1: histórico completo por código de rastreio
 CREATE TABLE events_by_code (
-  tracking_code TEXT,
-  timestamp     TIMESTAMP,
-  state         TEXT,
-  city          TEXT,
-  status        INT,      -- 0=REGISTERED | 1=COLLECTED | 2=IN_SEPARATION | 3=IN_TRANSIT | 4=OUT_FOR_DELIVERY | 5=DELIVERED
-  latitude      DOUBLE,
-  longitude     DOUBLE,
-  notes         TEXT,
-  PRIMARY KEY (tracking_code, timestamp)
+  trackingcode TEXT,
+  timestamp    TIMESTAMP,
+  state        TEXT,
+  city         TEXT,
+  status       INT,      -- 0=REGISTERED | 1=COLLECTED | 2=IN_SEPARATION | 3=IN_TRANSIT | 4=OUT_FOR_DELIVERY | 5=DELIVERED
+  latitude     DOUBLE,
+  longitude    DOUBLE,
+  notes        TEXT,
+  PRIMARY KEY (trackingcode, timestamp)
 ) WITH CLUSTERING ORDER BY (timestamp DESC);
 
--- Access pattern 2: pacotes que passaram por uma cidade num dado dia
+-- Access pattern 2: encomendas que passaram por uma cidade num dado dia
 CREATE TABLE events_by_city (
-  city          TEXT,
-  date_bucket   DATE,     -- partition por dia — evita partition infinita
-  timestamp     TIMESTAMP,
-  tracking_code TEXT,
-  status        INT,
-  PRIMARY KEY ((city, date_bucket), timestamp, tracking_code)
+  city         TEXT,
+  datebucket   DATE,     -- partition por dia — evita partition infinita
+  timestamp    TIMESTAMP,
+  trackingcode TEXT,
+  status       INT,
+  PRIMARY KEY ((city, datebucket), timestamp, trackingcode)
 ) WITH CLUSTERING ORDER BY (timestamp DESC);
 
--- Access pattern 3: pacotes com determinado status num dado dia
+-- Access pattern 3: encomendas com determinado status num dado dia
 CREATE TABLE events_by_status (
-  status        INT,
-  date_bucket   DATE,
-  timestamp     TIMESTAMP,
-  tracking_code TEXT,
-  city          TEXT,
-  PRIMARY KEY ((status, date_bucket), timestamp, tracking_code)
+  status       INT,
+  datebucket   DATE,
+  timestamp    TIMESTAMP,
+  trackingcode TEXT,
+  city         TEXT,
+  PRIMARY KEY ((status, datebucket), timestamp, trackingcode)
 ) WITH CLUSTERING ORDER BY (timestamp DESC);
 
 -- Dados cadastrais do pacote — uma linha por pacote, não cresce dentro da partição
 CREATE TABLE packages (
-  tracking_code TEXT PRIMARY KEY,
-  sender        TEXT,
-  recipient     TEXT,
-  origin        TEXT,
-  destination   TEXT,
-  created_at    TIMESTAMP,
-  weight_kg     DECIMAL
-);
-
--- Usuários admin — pré-populado via seed, sem tela de cadastro
-CREATE TABLE users (
-  username      TEXT PRIMARY KEY,
-  password_hash TEXT,   -- bcrypt
-  role          INT     -- 1 = ADMIN
+  trackingcode TEXT PRIMARY KEY,
+  sender       TEXT,
+  recipient    TEXT,
+  origin       TEXT,
+  destination  TEXT,
+  createdat    TIMESTAMP,
+  weightkg     DECIMAL
 );
 ```
 
@@ -81,7 +80,7 @@ CREATE TABLE users (
 
 ## Entidades Java
 
-Regra geral: **record** quando a partition key é simples. **Classe imutável com `@PersistenceCreator`** quando a partition key é composta.
+Regra geral: **record** quando a partition key é simples. **Classe imutável com `@PersistenceCreator`** quando há partition key composta ou clustering key.
 
 Entidades nunca são serializadas para o front — toda saída de API passa por um DTO (`*Response`).
 
@@ -98,14 +97,6 @@ public record Shipment(
     BigDecimal weightKg
 ) {}
 
-// ─── User.java — record (partition key simples) ───────────────────────────
-@Table("users")
-public record User(
-    @PrimaryKey String username,
-    String passwordHash,
-    String role
-) {}
-
 // ─── EventByCode.java — classe imutável (partition simples + clustering) ──
 @Table("events_by_code")
 public class EventByCode {
@@ -116,31 +107,16 @@ public class EventByCode {
     @PrimaryKeyColumn(type = PrimaryKeyType.CLUSTERED, ordinal = 0)
     private final Instant timestamp;
 
+    private final String state;
     private final String city;
-    private final String status;
+    private final EventStatus status;   // armazenado como INT via EventStatusConverter
     private final Double latitude;
     private final Double longitude;
     private final String notes;
 
     @PersistenceCreator
-    public EventByCode(String trackingCode, Instant timestamp, String city,
-                       String status, Double latitude, Double longitude, String notes) {
-        this.trackingCode = trackingCode;
-        this.timestamp    = timestamp;
-        this.city         = city;
-        this.status       = status;
-        this.latitude     = latitude;
-        this.longitude    = longitude;
-        this.notes        = notes;
-    }
-
-    public String getTrackingCode() { return trackingCode; }
-    public Instant getTimestamp()   { return timestamp; }
-    public String getCity()         { return city; }
-    public String getStatus()       { return status; }
-    public Double getLatitude()     { return latitude; }
-    public Double getLongitude()    { return longitude; }
-    public String getNotes()        { return notes; }
+    public EventByCode(String trackingCode, Instant timestamp, String state, String city,
+                       EventStatus status, Double latitude, Double longitude, String notes) { ... }
 }
 
 // ─── EventByCity.java — classe imutável (partition key composta) ──────────
@@ -159,23 +135,11 @@ public class EventByCity {
     @PrimaryKeyColumn(type = PrimaryKeyType.CLUSTERED, ordinal = 1)
     private final String trackingCode;
 
-    private final String status;
+    private final EventStatus status;
 
     @PersistenceCreator
     public EventByCity(String city, LocalDate dateBucket, Instant timestamp,
-                       String trackingCode, String status) {
-        this.city          = city;
-        this.dateBucket    = dateBucket;
-        this.timestamp     = timestamp;
-        this.trackingCode  = trackingCode;
-        this.status        = status;
-    }
-
-    public String getCity()             { return city; }
-    public LocalDate getDateBucket()    { return dateBucket; }
-    public Instant getTimestamp()       { return timestamp; }
-    public String getTrackingCode()     { return trackingCode; }
-    public String getStatus()           { return status; }
+                       String trackingCode, EventStatus status) { ... }
 }
 
 // ─── EventByStatus.java — classe imutável (partition key composta) ────────
@@ -183,7 +147,7 @@ public class EventByCity {
 public class EventByStatus {
 
     @PrimaryKeyColumn(type = PrimaryKeyType.PARTITIONED, ordinal = 0)
-    private final String status;
+    private final Integer status;       // raw INT — partition key não passa pelo converter
 
     @PrimaryKeyColumn(type = PrimaryKeyType.PARTITIONED, ordinal = 1)
     private final LocalDate dateBucket;
@@ -197,177 +161,119 @@ public class EventByStatus {
     private final String city;
 
     @PersistenceCreator
-    public EventByStatus(String status, LocalDate dateBucket, Instant timestamp,
-                         String trackingCode, String city) {
-        this.status        = status;
-        this.dateBucket    = dateBucket;
-        this.timestamp     = timestamp;
-        this.trackingCode  = trackingCode;
-        this.city          = city;
-    }
-
-    public String getStatus()           { return status; }
-    public LocalDate getDateBucket()    { return dateBucket; }
-    public Instant getTimestamp()       { return timestamp; }
-    public String getTrackingCode()     { return trackingCode; }
-    public String getCity()             { return city; }
+    public EventByStatus(Integer status, LocalDate dateBucket, Instant timestamp,
+                         String trackingCode, String city) { ... }
 }
 ```
 
 ---
 
-## Features Core
+## Features Core (todas implementadas)
 
 ### 1. Rastreio Público por Código
 Consulta principal do sistema — o usuário digita o código e vê a timeline completa de eventos
-em ordem cronológica, com cidade, status e horário de cada etapa.
+em ordem cronológica, com estado, cidade, status e horário de cada etapa.
 
 **Por que é bom no Cassandra:** leitura por partition key, O(1) independente do volume total.
 
 ---
 
-### 2. Mapa da Rota Percorrida
-Cada evento carrega latitude e longitude do hub onde foi registrado. A rota é desenhada
-no mapa conectando os pontos em ordem cronológica.
-
-**Feature extra — animação da rota:** reproduzir o percurso da encomenda como uma animação
-no mapa (Angular + Leaflet), mostrando o pacote "se movendo" entre cidades ao longo do tempo.
-
----
-
-### 3. Registro de Eventos com Logged Batch
+### 2. Registro de Eventos com Logged Batch
 Quando o admin registra que um pacote passou por um hub, a escrita acontece
 simultaneamente em três tabelas (`events_by_code`, `events_by_city`, `events_by_status`)
 dentro de um **Cassandra Logged Batch** — garantia de atomicidade mesmo entre tabelas.
+
+```java
+cassandraTemplate.batchOps()
+    .insert(eventByCode, ttlOptions)
+    .insert(eventByCity, ttlOptions)
+    .insert(eventByStatus, ttlOptions)
+    .execute();
+```
 
 **Por que mostrar isso:** demonstra entendimento de que denormalização no Cassandra exige
 consistência nas escritas multi-tabela.
 
 ---
 
-### 4. Criação de Encomenda com Lightweight Transaction
+### 3. Criação de Encomenda com Lightweight Transaction
 O código de rastreio único é garantido com `INSERT INTO packages ... IF NOT EXISTS` —
 Lightweight Transaction (LWT) do Cassandra. Se dois operadores tentarem cadastrar o mesmo
 código ao mesmo tempo, apenas um vai passar.
+
+```java
+InsertOptions lwtOptions = InsertOptions.builder().withIfNotExists().build();
+var result = cassandraTemplate.insert(shipment, lwtOptions);
+if (!result.wasApplied()) throw new DuplicateTrackingCodeException(shipment.trackingCode());
+```
+
+O código de rastreio é auto-gerado pelo servidor (`BR` + 9 chars UUID hex em maiúsculas).
+Retorna HTTP 409 se a inserção LWT falhar.
 
 **Por que mostrar isso:** o Cassandra não tem sequências nem UUIDs auto-incrementados nativos
 como bancos relacionais. LWT é a resposta distribuída para unicidade.
 
 ---
 
-### 5. QR Code por Encomenda
-Ao cadastrar uma encomenda, o sistema gera automaticamente um QR Code (ZXing — já na pom.xml)
-que aponta para a URL de rastreio público. O admin pode imprimir ou exportar.
+### 4. QR Code por Encomenda
+Ao cadastrar uma encomenda, o sistema gera automaticamente um QR Code (ZXing)
+que aponta para a URL de rastreio público (`{public-url}/rastreio/{code}`).
+O QR Code é retornado como base64 PNG no campo `qrCode` da resposta de criação.
 
 ---
 
-### 6. Atividade por Hub (Cidade) Hoje
+### 5. Atividade por Hub (Cidade) Hoje
 Tela admin: seleciona uma cidade e vê todos os pacotes que passaram por lá no dia atual.
-Possível graças à tabela `events_by_city` com `data_bucket = today()`.
+Usa `events_by_city` com `datebucket = LocalDate.now()`.
 
-**Por que é interessante:** mostra que no Cassandra você não faz `WHERE cidade = X` em
+**Por que é interessante:** mostra que no Cassandra você não faz `WHERE city = X` em
 qualquer tabela — você cria uma tabela específica para esse access pattern.
 
 ---
 
-### 7. Pacotes por Status em Tempo Real
-Tela admin: lista de pacotes com status `EM_TRANSITO` ou `SAIU_PARA_ENTREGA` hoje.
-Usa a tabela `events_by_status` — mesmo conceito de access pattern explícito.
+### 6. Pacotes por Status Hoje
+Tela admin: lista de pacotes com determinado status no dia atual.
+Usa `events_by_status` com `datebucket = LocalDate.now()`.
 
 ---
 
-### 8. Atualização em Tempo Real com SSE
-Quando o usuário abre a página de rastreio de um pacote, o navegador estabelece uma
-conexão SSE (Server-Sent Events) com o servidor. Quando o admin registra um novo evento,
-o servidor empurra a atualização para todos os clientes que estão acompanhando aquele código
-— a timeline atualiza sozinha, sem F5.
+### 7. Atualização em Tempo Real com SSE
+Quando o usuário abre a página de rastreio, o navegador estabelece uma conexão SSE
+com o servidor. Quando o admin registra um novo evento, o servidor empurra a atualização
+para todos os clientes que estão acompanhando aquele código — a timeline atualiza
+sozinha, sem F5.
 
 Fluxo:
 ```
 Usuário abre /rastreio/BR123
-  → navegador abre GET /rastreio/BR123/stream (conexão SSE fica aberta)
+  → GET /rastreio/BR123/stream (conexão SSE fica aberta)
 
 Admin registra novo evento em BR123
-  → POST /packages/BR123/eventos
+  → POST /shipments/BR123/eventos
   → Logged Batch no Cassandra
-  → servidor empurra evento pelo canal SSE de BR123
-  → timeline do usuário atualiza em tempo real
+  → SseService.publish(code, evento) → emite para todos os emitters desse código
+  → timeline atualiza em tempo real
 ```
 
-**Implementação no Spring Boot:** `SseEmitter` — nativo, sem dependência extra, sem Redis,
-sem WebSocket. Cada código de rastreio tem seu próprio canal de emitters ativos.
-
-**Por que é bom pro demo:** abre a página de rastreio num navegador e o painel admin em outro.
-O professor vê a timeline atualizar em tempo real enquanto o admin registra eventos.
+Implementação: `SseEmitter` nativo do Spring MVC. Cada código tem sua lista de emitters
+em `ConcurrentHashMap<String, CopyOnWriteArrayList<SseEmitter>>`.
+Emitters quebrados são removidos automaticamente no momento da falha de envio.
 
 ---
 
-### 9. Autenticação com JWT de curta duração
-Tabela `users` no Cassandra com o admin pré-cadastrado via script de seed — sem tela
-de cadastro, sem fluxo de criação de conta. A senha é armazenada com hash bcrypt.
+### 8. TTL Automático em Eventos Antigos
+Eventos são inseridos com TTL de 90 dias. O Cassandra apaga automaticamente sem job de limpeza.
 
-```cql
--- executado na inicialização do projeto (idempotente)
-INSERT INTO users (username, password_hash, role)
-VALUES ('admin', '$2a$...', 'ADMIN')
-IF NOT EXISTS;
+```java
+InsertOptions ttlOptions = InsertOptions.builder().ttl(Duration.ofDays(90)).build();
 ```
-
-Fluxo de login:
-```
-POST /auth/login { username, password }
-  → busca usuário no Cassandra por username (partition key — O(1))
-  → bcrypt.verify(password, hash)
-  → retorna JWT (15 min) + refresh token se válido
-```
-
-JWT de curta duração elimina a necessidade de blacklist — o token expira sozinho,
-tornando o logout seguro sem nenhum armazenamento extra.
 
 ---
 
-### 10. TTL Automático em Eventos Antigos
-Eventos de packages entregues há mais de 90 dias são configurados com TTL nativo do
-Cassandra — o banco apaga automaticamente sem nenhum job de limpeza.
-
-```cql
-INSERT INTO events_by_code (...) VALUES (...) USING TTL 7776000; -- 90 dias
-```
-
-**Por que mostrar isso:** feature que não existe em bancos relacionais nativamente.
-Útil para compliance e economia de armazenamento.
-
----
-
-### 11. Idempotência no Scanner
+### 9. Idempotência no Scanner
 Se um scanner de hub registrar o mesmo evento duas vezes (falha de rede, duplo clique),
 o Cassandra simplesmente sobrescreve com os mesmos dados — comportamento de upsert nativo.
 A API de registro de eventos é naturalmente idempotente.
-
-**Por que mostrar isso:** em sistemas distribuídos, idempotência é crítica. O Cassandra
-entrega isso sem código extra.
-
----
-
-## Features Secundárias (se sobrar tempo)
-
-- **Estimativa de entrega:** baseado no tempo médio entre eventos de packages similares
-  (origem → destino), calculado na camada de aplicação
-- **Histórico de rotas populares:** quais pares origem-destino têm mais volume — via tabela
-  `rotas_por_volume` com counter columns do Cassandra
-- **Notificação por e-mail:** quando status muda para `ENTREGUE`, dispara e-mail ao destinatário
-
----
-
-## O que foi removido e por quê
-
-| Feature | Motivo |
-|---|---|
-| Dashboard com métricas globais (totais, tempo médio) | Requer aggregações que o Cassandra não suporta — forçaria lógica complexa na aplicação sem ganho |
-| Sistema de avaliações com média por rota | `GROUP BY` + `AVG` são anti-patterns em Cassandra |
-| Relatórios administrativos | Consultas ad-hoc não funcionam bem com tabelas de access pattern fixo |
-| Cache de rastreio no Redis | Cassandra já é O(1) por partition key — não há gargalo real a resolver. Cache criaria complexidade de invalidação sem benefício concreto |
-| Redis (JWT blacklist) | Tokens de curta duração (15 min) resolvem o problema de logout sem precisar de infraestrutura extra |
 
 ---
 
@@ -378,85 +284,144 @@ src/main/java/com/jps/jps/
 │
 ├── JpsApplication.java
 │
-├── shipment/                             # cadastro de pacotes (admin)
-│   ├── Shipment.java                     @Table("packages") — record
-│   ├── ShipmentRequest.java              DTO de entrada (POST)
-│   ├── ShipmentResponse.java             DTO de saída (admin — inclui sender/recipient)
-│   ├── ShipmentRepository.java
-│   ├── ShipmentService.java
-│   ├── ShipmentController.java           /shipments
-│   └── ShipmentNotFoundException.java    @ResponseStatus(NOT_FOUND)
-│
-├── tracking/                             # rastreio público (sem auth)
-│   ├── TrackingResponse.java             agregado (Shipment + timeline) — sem sender/recipient (LGPD)
-│   ├── TrackingService.java              orquestra ShipmentService + EventByCodeService
-│   └── TrackingController.java           /rastreio/{trackingCode}
-│
 ├── config/
-│   └── CassandraConfig.java              @Bean CassandraCustomConversions (status + role)
+│   ├── CassandraConfig.java          @Bean CassandraCustomConversions (EventStatusConverter)
+│   └── GlobalExceptionHandler.java   @RestControllerAdvice — 404/409/400 padronizados
 │
-├── user/
-│   ├── User.java                         @Table("users") — record
-│   ├── Role.java                         enum com Integer id + fromId()
-│   └── RoleConverter.java                Read (Integer→Role) + Write (Role→Integer)
+├── shipment/                          # cadastro de encomendas (admin)
+│   ├── Shipment.java                  @Table("packages") — record
+│   ├── ShipmentRequest.java           DTO entrada: sender, recipient, origin, destination, weightKg
+│   ├── ShipmentResponse.java          DTO saída: inclui qrCode (base64 PNG)
+│   ├── ShipmentRepository.java
+│   ├── ShipmentService.java           LWT + QR Code generation
+│   ├── ShipmentController.java        POST /shipments · GET /shipments/{code} · DELETE /shipments/{code}
+│   │                                  POST /shipments/{code}/eventos
+│   ├── ShipmentNotFoundException.java → 404
+│   └── DuplicateTrackingCodeException.java → 409
+│
+├── tracking/                          # rastreio público (sem auth)
+│   ├── TrackingResponse.java          agregado (Shipment + timeline) — sem sender/recipient (LGPD)
+│   ├── TrackingService.java           orquestra ShipmentService + EventByCodeService
+│   ├── TrackingController.java        GET /rastreio/{code} · GET /rastreio/{code}/stream (SSE)
+│   └── SseService.java                ConcurrentHashMap de emitters por código
 │
 └── event/
-    └── eventByCode/
-        ├── EventByCode.java              @Table("events_by_code") — classe imutável
-        ├── EventByCodeRepository.java    findByTrackingCode(String) — partition key
-        ├── EventByCodeService.java       devolve List<TimelineEventResponse>
-        ├── TimelineEventResponse.java    DTO de um item da timeline (sem trackingCode)
-        ├── EventStatus.java              enum com (id, name em pt-BR) + fromId
-        ├── EventStatusResponse.java      DTO {id, name} devolvido ao front
-        └── EventStatusConverter.java     Read INT→enum + Write enum→INT
+    ├── eventByCode/
+    │   ├── EventByCode.java           @Table("events_by_code") — classe imutável
+    │   ├── EventByCodeRepository.java findByTrackingCode(String) — partition key
+    │   ├── EventByCodeService.java    Logged Batch + TTL + SSE publish
+    │   ├── EventRequest.java          DTO entrada: state, city, status (INT), lat, lng, notes
+    │   ├── TimelineEventResponse.java DTO de um item da timeline
+    │   ├── EventStatus.java           enum (id, name pt-BR) + fromId(int)
+    │   ├── EventStatusResponse.java   DTO {id, name}
+    │   └── EventStatusConverter.java  Read INT→EventStatus · Write EventStatus→INT
+    │
+    ├── eventByCity/
+    │   ├── EventByCity.java           @Table("events_by_city") — partition composta (city, dateBucket)
+    │   ├── EventByCityRepository.java @Query com datebucket (sem underscore)
+    │   ├── EventByCityService.java    devolve CityActivityResponse
+    │   ├── EventByCityController.java GET /hubs/{city}/hoje
+    │   ├── CityEventItem.java         DTO de um item na lista de hub
+    │   └── CityActivityResponse.java  DTO {city, date, total, events}
+    │
+    └── eventByStatus/
+        ├── EventByStatus.java         @Table("events_by_status") — partition composta (status INT, dateBucket)
+        ├── EventByStatusRepository.java @Query com datebucket (sem underscore)
+        ├── EventByStatusService.java  devolve StatusActivityResponse
+        ├── EventByStatusController.java GET /status/{statusId}/hoje
+        ├── StatusEventItem.java       DTO de um item na lista de status
+        └── StatusActivityResponse.java DTO {statusId, statusName, date, total, events}
 ```
 
 ---
 
-## Contratos de API públicos
+## Contratos de API
 
-### `GET /rastreio/{trackingCode}` — rastreio público (sem auth)
+### `POST /shipments` — cadastrar encomenda
 
-Resposta agregada combinando pacote + timeline. **Não inclui `sender`/`recipient`** por LGPD —
-quem precisa ver dados pessoais é o admin via `/shipments/{trackingCode}`.
+```json
+// Request
+{ "sender": "...", "recipient": "...", "origin": "...", "destination": "...", "weightKg": 2.5 }
 
-`currentStatus` é derivado do primeiro evento (clustering `timestamp DESC` já entrega ordenado).
-Se o pacote existe mas ainda não tem eventos, `currentStatus = "REGISTERED"` e `events = []`.
-Se o `trackingCode` não existe, retorna `404` via `ShipmentNotFoundException`.
+// Response 201
+{
+  "trackingCode": "BR9A3C12F40",
+  "sender": "...", "recipient": "...", "origin": "...", "destination": "...",
+  "createdAt": "2026-06-24T10:00:00Z",
+  "weightKg": 2.5,
+  "qrCode": "<base64 PNG>"
+}
+// 409 se LWT falhar (colisão de código — extremamente raro)
+```
+
+### `POST /shipments/{trackingCode}/eventos` — registrar evento
+
+```json
+// Request
+{ "state": "SP", "city": "Campinas", "status": 3, "latitude": -22.9, "longitude": -47.1, "notes": "..." }
+
+// Response 201
+{
+  "timestamp": "2026-06-24T10:05:00Z",
+  "state": "SP",
+  "city": "Campinas",
+  "status": { "id": 3, "name": "Em trânsito" },
+  "latitude": -22.9, "longitude": -47.1, "notes": "..."
+}
+```
+
+### `GET /rastreio/{trackingCode}` — rastreio público
+
+Não inclui `sender`/`recipient` (LGPD). `currentStatus` derivado do evento mais recente.
+Se sem eventos → `currentStatus = {id:0, name:"Registrado"}`.
 
 ```json
 {
-  "trackingCode": "BR123ABC",
-  "origin": "São Paulo",
-  "destination": "Recife",
-  "createdAt": "2026-06-20T14:00:00Z",
+  "trackingCode": "BR9A3C12F40",
+  "origin": "Campinas SP",
+  "destination": "Rio de Janeiro RJ",
+  "createdAt": "2026-06-24T10:00:00Z",
   "currentStatus": { "id": 3, "name": "Em trânsito" },
   "events": [
     { "timestamp": "...", "state": "SP", "city": "Campinas",
       "status": { "id": 3, "name": "Em trânsito" },
-      "latitude": -22.9, "longitude": -47.0, "notes": "..." },
-    { "timestamp": "...", "state": "SP", "city": "São Paulo",
-      "status": { "id": 1, "name": "Coletado" },
-      "latitude": -23.5, "longitude": -46.6, "notes": "..." }
+      "latitude": -22.9, "longitude": -47.0, "notes": "..." }
   ]
 }
+// 404 → {"error": "Shipment not found: BR9A3C12F40"}
 ```
 
-Status é serializado como objeto `{id, name}`. O `name` vai em português (pronto para
-exibir no front). Os possíveis valores estão no enum `EventStatus`:
+### `GET /rastreio/{trackingCode}/stream` — SSE
 
-| id | constant         | name (pt-BR)         |
-|----|------------------|----------------------|
-| 0  | REGISTERED       | Registrado           |
-| 1  | COLLECTED        | Coletado             |
-| 2  | IN_SEPARATION    | Em separação         |
-| 3  | IN_TRANSIT       | Em trânsito          |
-| 4  | OUT_FOR_DELIVERY | Saiu para entrega    |
-| 5  | DELIVERED        | Entregue             |
+`Content-Type: text/event-stream`. Cada evento empurra o mesmo JSON de `TimelineEventResponse`.
 
-No Cassandra, status é armazenado como `INT` (id). A conversão `INT ↔ ShipmentStatus`
-acontece via `ShipmentStatusConverter` registrado em `CassandraConfig`. Mesmo padrão
-vale para `Role` (também `INT`).
+### `GET /hubs/{city}/hoje` — atividade de hub
+
+```json
+{ "city": "Campinas", "date": "2026-06-24", "total": 3, "events": [ ... ] }
+```
+
+### `GET /status/{statusId}/hoje` — atividade por status
+
+```json
+{ "statusId": 3, "statusName": "Em trânsito", "date": "2026-06-24", "total": 2, "events": [ ... ] }
+```
+
+---
+
+## Status Enum
+
+| id | constant         | name (pt-BR)      |
+|----|------------------|-------------------|
+| 0  | REGISTERED       | Registrado        |
+| 1  | COLLECTED        | Coletado          |
+| 2  | IN_SEPARATION    | Em separação      |
+| 3  | IN_TRANSIT       | Em trânsito       |
+| 4  | OUT_FOR_DELIVERY | Saiu para entrega |
+| 5  | DELIVERED        | Entregue          |
+
+Armazenado como `INT` no Cassandra. Conversão `INT ↔ EventStatus` via `EventStatusConverter`
+registrado em `CassandraConfig`. Status é serializado como `{id, name}` em toda resposta de API.
 
 ---
 
@@ -465,17 +430,29 @@ vale para `Role` (também `INT`).
 ```
 [Usuário público]
   digita código → GET /rastreio/{codigo}
-    → Cassandra events_by_code → retorna timeline
-  abre página      → GET /rastreio/{codigo}/stream (SSE — conexão fica aberta)
-    → quando admin registra evento, servidor empurra atualização → timeline atualiza sem F5
+    → Cassandra events_by_code → retorna timeline agregada
+  abre página   → GET /rastreio/{codigo}/stream (SSE — conexão fica aberta)
+    → quando admin registra evento, servidor empurra update → timeline atualiza sem F5
 
-[Admin]
-  login              → POST /auth/login → JWT (15 min) + refresh token
-  logout             → cliente descarta o token — expira sozinho
-  cadastra encomenda → POST /packages (LWT IF NOT EXISTS + gera QR Code)
-  registra evento    → POST /packages/{codigo}/eventos
-                          → Logged Batch: escreve nas 3 tabelas simultaneamente
-                          → empurra evento via SSE para clientes conectados nesse código
+[Admin (sem auth)]
+  cadastra encomenda → POST /shipments
+                         → LWT IF NOT EXISTS (garante uniqueness)
+                         → gera QR Code ZXing → retorna base64 PNG
+  registra evento    → POST /shipments/{codigo}/eventos
+                         → Logged Batch: escreve nas 3 tabelas simultaneamente (TTL 90d)
+                         → SseService.publish → empurra para clientes SSE conectados
   vê hub activity    → GET /hubs/{cidade}/hoje → events_by_city
-  vê por status      → GET /status/{status}/hoje → events_by_status
+  vê por status      → GET /status/{statusId}/hoje → events_by_status
 ```
+
+---
+
+## O que foi removido e por quê
+
+| Feature | Motivo |
+|---|---|
+| Autenticação JWT / tabela `users` | Removida a pedido — admin público para fins de demonstração |
+| Dashboard com métricas globais | Requer aggregações que o Cassandra não suporta — anti-pattern |
+| Relatórios administrativos | Consultas ad-hoc não funcionam com tabelas de access pattern fixo |
+| Cache Redis | Cassandra já é O(1) por partition key — sem gargalo real a resolver |
+| Mapa da rota (Leaflet) | Fora do escopo do frontend implementado |
