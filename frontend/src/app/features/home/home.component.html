@@ -1,0 +1,25 @@
+<div class="home">
+  <div class="hero">
+    <div class="logo">
+      <span class="logo-icon">📦</span>
+      <h1>JPS <span>Rastreio</span></h1>
+    </div>
+    <p class="subtitle">Acompanhe sua encomenda em tempo real</p>
+
+    <form class="search-box" (ngSubmit)="search()">
+      <input
+        type="text"
+        [(ngModel)]="trackingCode"
+        name="code"
+        placeholder="Digite o código de rastreio (ex: BR123ABC)"
+        autocomplete="off"
+        autofocus
+      />
+      <button type="submit" [disabled]="!trackingCode.trim()">Rastrear</button>
+    </form>
+  </div>
+
+  <footer class="home-footer">
+    <button class="link-btn" (click)="goToAdmin()">Painel Admin →</button>
+  </footer>
+</div>

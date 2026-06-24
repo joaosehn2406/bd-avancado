@@ -1,0 +1,223 @@
+<div class="admin-layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-logo">📦</span>
+      <span class="sidebar-title">JPS Admin</span>
+    </div>
+    <nav>
+      <button [class.active]="activeTab === 'shipments'" (click)="setTab('shipments')">
+        Encomendas
+      </button>
+      <button [class.active]="activeTab === 'events'" (click)="setTab('events')">
+        Registrar Evento
+      </button>
+      <button [class.active]="activeTab === 'hub'" (click)="setTab('hub')" class="nav-soon">
+        Atividade por Hub
+        <span class="soon-tag">em breve</span>
+      </button>
+      <button [class.active]="activeTab === 'status'" (click)="setTab('status')" class="nav-soon">
+        Pacotes por Status
+        <span class="soon-tag">em breve</span>
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="link-btn" (click)="goHome()">← Início</button>
+    </div>
+  </aside>
+
+  <!-- Conteúdo principal -->
+  <main class="main-content">
+
+    <!-- ── Tab: Encomendas ── -->
+    @if (activeTab === 'shipments') {
+      <section class="section">
+        <h2>Nova Encomenda</h2>
+        <p class="section-desc">
+          O código de rastreio é gerado automaticamente via
+          <code>INSERT … IF NOT EXISTS</code> (LWT).
+        </p>
+        <form class="form-grid" (ngSubmit)="createShipment()">
+          <label>
+            Remetente
+            <input [(ngModel)]="shipmentForm.sender" name="sender" required placeholder="Ex: João Silva" />
+          </label>
+          <label>
+            Destinatário
+            <input [(ngModel)]="shipmentForm.recipient" name="recipient" required placeholder="Ex: Maria Costa" />
+          </label>
+          <label>
+            Origem
+            <input [(ngModel)]="shipmentForm.origin" name="origin" required placeholder="Ex: São Paulo" />
+          </label>
+          <label>
+            Destino
+            <input [(ngModel)]="shipmentForm.destination" name="destination" required placeholder="Ex: Recife" />
+          </label>
+          <label>
+            Peso (kg)
+            <input type="number" [(ngModel)]="shipmentForm.weightKg" name="weightKg" min="0.01" step="0.01" required placeholder="0.00" />
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary" [disabled]="shipmentLoading">
+              {{ shipmentLoading ? 'Criando…' : 'Criar Encomenda' }}
+            </button>
+          </div>
+        </form>
+
+        @if (shipmentError) {
+          <div class="alert alert-error">{{ shipmentError }}</div>
+        }
+
+        @if (createdShipment) {
+          <div class="alert alert-success">
+            <p><strong>Encomenda criada!</strong></p>
+            <p>Código: <code>{{ createdShipment.trackingCode }}</code></p>
+            <p>{{ createdShipment.origin }} → {{ createdShipment.destination }}</p>
+            <button class="btn-link" (click)="viewTracking(createdShipment.trackingCode)">
+              Ver rastreio público →
+            </button>
+          </div>
+        }
+      </section>
+
+      <div class="divider"></div>
+
+      <section class="section">
+        <h2>Buscar Encomenda</h2>
+        <div class="search-row">
+          <input
+            [(ngModel)]="searchCode"
+            name="searchCode"
+            placeholder="Código de rastreio"
+            (keydown.enter)="searchShipment()"
+          />
+          <button class="btn-primary" (click)="searchShipment()" [disabled]="searchLoading || !searchCode.trim()">
+            {{ searchLoading ? 'Buscando…' : 'Buscar' }}
+          </button>
+        </div>
+
+        @if (searchError) {
+          <div class="alert alert-error">{{ searchError }}</div>
+        }
+
+        @if (foundShipment) {
+          <div class="shipment-card">
+            <div class="shipment-card-header">
+              <div>
+                <p class="label">Código</p>
+                <code class="code-big">{{ foundShipment.trackingCode }}</code>
+              </div>
+              <div class="shipment-actions">
+                <button class="btn-outline" (click)="viewTracking(foundShipment.trackingCode)">
+                  Ver rastreio
+                </button>
+                @if (!deleteConfirm) {
+                  <button class="btn-danger-outline" (click)="deleteConfirm = true">Deletar</button>
+                } @else {
+                  <span class="confirm-row">
+                    <span>Confirmar?</span>
+                    <button class="btn-danger" (click)="deleteShipment()">Sim</button>
+                    <button class="btn-outline" (click)="deleteConfirm = false">Não</button>
+                  </span>
+                }
+              </div>
+            </div>
+            <div class="shipment-details">
+              <div><span class="label">Remetente</span><p>{{ foundShipment.sender }}</p></div>
+              <div><span class="label">Destinatário</span><p>{{ foundShipment.recipient }}</p></div>
+              <div><span class="label">Origem</span><p>{{ foundShipment.origin }}</p></div>
+              <div><span class="label">Destino</span><p>{{ foundShipment.destination }}</p></div>
+              <div><span class="label">Peso</span><p>{{ foundShipment.weightKg }} kg</p></div>
+              <div><span class="label">Criado em</span><p>{{ formatDate(foundShipment.createdAt) }}</p></div>
+            </div>
+          </div>
+        }
+      </section>
+    }
+
+    <!-- ── Tab: Registrar Evento ── -->
+    @if (activeTab === 'events') {
+      <section class="section">
+        <h2>Registrar Evento</h2>
+        <p class="section-desc">
+          A escrita ocorre simultaneamente em <code>events_by_code</code>,
+          <code>events_by_city</code> e <code>events_by_status</code>
+          via <strong>Cassandra Logged Batch</strong>.
+        </p>
+
+        <form class="form-grid" (ngSubmit)="registerEvent()">
+          <label class="full-width">
+            Código de Rastreio
+            <input [(ngModel)]="eventCode" name="eventCode" required placeholder="Ex: BR123ABC" />
+          </label>
+          <label>
+            Estado (UF)
+            <input [(ngModel)]="eventForm.state" name="state" required placeholder="Ex: SP" maxlength="2" />
+          </label>
+          <label>
+            Cidade
+            <input [(ngModel)]="eventForm.city" name="city" required placeholder="Ex: Campinas" />
+          </label>
+          <label>
+            Status
+            <select [(ngModel)]="eventForm.status" name="status">
+              @for (s of statusOptions; track s.id) {
+                <option [value]="s.id">{{ s.id }} — {{ s.name }}</option>
+              }
+            </select>
+          </label>
+          <label>
+            Latitude
+            <input type="number" [(ngModel)]="eventForm.latitude" name="lat" step="0.0001" placeholder="Ex: -22.9000" />
+          </label>
+          <label>
+            Longitude
+            <input type="number" [(ngModel)]="eventForm.longitude" name="lng" step="0.0001" placeholder="Ex: -47.0000" />
+          </label>
+          <label class="full-width">
+            Observações (opcional)
+            <input [(ngModel)]="eventForm.notes" name="notes" placeholder="Ex: Pacote aguardando triagem" />
+          </label>
+          <div class="form-actions full-width">
+            <button type="submit" class="btn-primary" [disabled]="eventLoading">
+              {{ eventLoading ? 'Registrando…' : 'Registrar Evento' }}
+            </button>
+          </div>
+        </form>
+
+        @if (eventError) {
+          <div class="alert alert-error">{{ eventError }}</div>
+        }
+        @if (eventSuccess) {
+          <div class="alert alert-success">Evento registrado com sucesso!</div>
+        }
+      </section>
+    }
+
+    <!-- ── Tab: Hub Activity ── -->
+    @if (activeTab === 'hub') {
+      <section class="section">
+        <h2>Atividade por Hub</h2>
+        <div class="coming-soon">
+          <span>🚧</span>
+          <p>Endpoint <code>GET /hubs/&#123;cidade&#125;/hoje</code> ainda não implementado no backend.</p>
+          <p class="note">Requer tabela <code>events_by_city</code> e serviço correspondente.</p>
+        </div>
+      </section>
+    }
+
+    <!-- ── Tab: Status View ── -->
+    @if (activeTab === 'status') {
+      <section class="section">
+        <h2>Pacotes por Status</h2>
+        <div class="coming-soon">
+          <span>🚧</span>
+          <p>Endpoint <code>GET /status/&#123;status&#125;/hoje</code> ainda não implementado no backend.</p>
+          <p class="note">Requer tabela <code>events_by_status</code> e serviço correspondente.</p>
+        </div>
+      </section>
+    }
+
+  </main>
+</div>

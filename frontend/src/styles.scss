@@ -1,0 +1,26 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --primary:       #1d4ed8;
+  --primary-dark:  #1e3a8a;
+  --bg-page:       #f8fafc;
+  --border:        #e2e8f0;
+  --text-primary:  #0f172a;
+  --text-secondary:#334155;
+  --text-muted:    #64748b;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px;
+  color: var(--text-primary);
+  background: var(--bg-page);
+}
+
+h1, h2, h3 { margin: 0; line-height: 1.3; }
+
+code {
+  font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+}

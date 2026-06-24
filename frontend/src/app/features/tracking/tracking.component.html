@@ -1,0 +1,79 @@
+<div class="tracking-page">
+  <div class="top-bar">
+    <button class="back-btn" (click)="goBack()">← Voltar</button>
+  </div>
+
+  @if (loading) {
+    <div class="state-center">
+      <div class="spinner"></div>
+      <p>Consultando encomenda...</p>
+    </div>
+  }
+
+  @if (!loading && errorMessage) {
+    <div class="state-center">
+      <div class="error-icon">⚠️</div>
+      <p class="error-msg">{{ errorMessage }}</p>
+      <button class="btn-primary" (click)="goBack()">Voltar para busca</button>
+    </div>
+  }
+
+  @if (!loading && tracking) {
+    <div class="content">
+      <!-- Header do pacote -->
+      <div class="card package-header">
+        <div class="header-main">
+          <div>
+            <p class="label">Código de rastreio</p>
+            <h2 class="tracking-code">{{ tracking.trackingCode }}</h2>
+          </div>
+          <app-status-badge [status]="tracking.currentStatus" />
+        </div>
+        <div class="route">
+          <span class="city">{{ tracking.origin }}</span>
+          <span class="arrow">→</span>
+          <span class="city">{{ tracking.destination }}</span>
+        </div>
+        <p class="created">Cadastrado em {{ formatDate(tracking.createdAt) }}</p>
+      </div>
+
+      <div class="main-grid">
+        <!-- Timeline -->
+        <div class="card timeline-card">
+          <h3>Histórico de eventos</h3>
+          @if (tracking.events.length === 0) {
+            <p class="empty">Nenhum evento registrado ainda.</p>
+          } @else {
+            <ol class="timeline">
+              @for (event of tracking.events; track event.timestamp) {
+                <li class="timeline-item">
+                  <div class="timeline-dot status-dot-{{ event.status.id }}"></div>
+                  <div class="timeline-body">
+                    <div class="event-header">
+                      <app-status-badge [status]="event.status" />
+                      <span class="event-time">{{ formatDate(event.timestamp) }}</span>
+                    </div>
+                    <p class="event-location">
+                      📍 {{ event.city }}{{ event.state ? ' — ' + event.state : '' }}
+                    </p>
+                    @if (event.notes) {
+                      <p class="event-notes">{{ event.notes }}</p>
+                    }
+                  </div>
+                </li>
+              }
+            </ol>
+          }
+        </div>
+
+        <!-- Mapa -->
+        @if (eventsWithCoords().length > 0) {
+          <div class="card map-card">
+            <h3>Rota percorrida</h3>
+            <div id="route-map"></div>
+          </div>
+        }
+      </div>
+    </div>
+  }
+</div>
