@@ -1,7 +1,6 @@
 package com.jps.jps.config;
 
 import com.jps.jps.event.eventByCode.EventStatusConverter;
-import com.jps.jps.user.RoleConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.cassandra.core.convert.CassandraCustomConversions;
@@ -15,9 +14,7 @@ public class CassandraConfig {
     public CassandraCustomConversions cassandraCustomConversions() {
         return new CassandraCustomConversions(List.of(
                 new EventStatusConverter.Read(),
-                new EventStatusConverter.Write(),
-                new RoleConverter.Read(),
-                new RoleConverter.Write()
+                new EventStatusConverter.Write()
         ));
     }
 }
