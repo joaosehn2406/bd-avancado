@@ -14,6 +14,7 @@ export interface ShipmentResponse {
   destination: string;
   createdAt: string;
   weightKg: number;
+  qrCode: string | null;
 }
 
 export interface EventRequest {

@@ -1,10 +1,12 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ShipmentService } from '../../core/services/shipment.service';
+import { HubService } from '../../core/services/hub.service';
 import { ShipmentRequest, ShipmentResponse, EventRequest } from '../../core/models/shipment.model';
 import { EventStatusResponse } from '../../core/models/tracking.model';
+import { CityActivityResponse, StatusActivityResponse } from '../../core/models/hub.model';
 
 type Tab = 'shipments' | 'events' | 'hub' | 'status';
 
@@ -17,29 +19,42 @@ type Tab = 'shipments' | 'events' | 'hub' | 'status';
 })
 export class AdminComponent {
   private readonly shipmentService = inject(ShipmentService);
+  private readonly hubService = inject(HubService);
   private readonly router = inject(Router);
 
-  activeTab: Tab = 'shipments';
+  readonly activeTab = signal<Tab>('shipments');
 
   // ── Criar encomenda ──────────────────────────────────────────
   shipmentForm: ShipmentRequest = { sender: '', recipient: '', origin: '', destination: '', weightKg: 0 };
-  createdShipment: ShipmentResponse | null = null;
-  shipmentError: string | null = null;
-  shipmentLoading = false;
+  readonly createdShipment = signal<ShipmentResponse | null>(null);
+  readonly shipmentError = signal<string | null>(null);
+  readonly shipmentLoading = signal(false);
 
   // ── Buscar encomenda ─────────────────────────────────────────
   searchCode = '';
-  foundShipment: ShipmentResponse | null = null;
-  searchError: string | null = null;
-  searchLoading = false;
-  deleteConfirm = false;
+  readonly foundShipment = signal<ShipmentResponse | null>(null);
+  readonly searchError = signal<string | null>(null);
+  readonly searchLoading = signal(false);
+  readonly deleteConfirm = signal(false);
 
   // ── Registrar evento ─────────────────────────────────────────
   eventCode = '';
   eventForm: EventRequest = { state: '', city: '', status: 3, latitude: null, longitude: null, notes: null };
-  eventSuccess = false;
-  eventError: string | null = null;
-  eventLoading = false;
+  readonly eventSuccess = signal(false);
+  readonly eventError = signal<string | null>(null);
+  readonly eventLoading = signal(false);
+
+  // ── Hub (atividade por cidade) ────────────────────────────────
+  hubCity = '';
+  readonly hubResult = signal<CityActivityResponse | null>(null);
+  readonly hubError = signal<string | null>(null);
+  readonly hubLoading = signal(false);
+
+  // ── Status (pacotes por status hoje) ─────────────────────────
+  statusSelectedId = 3;
+  readonly statusResult = signal<StatusActivityResponse | null>(null);
+  readonly statusError = signal<string | null>(null);
+  readonly statusLoading = signal(false);
 
   readonly statusOptions = [
     { id: 0, name: 'Registrado' },
@@ -51,26 +66,26 @@ export class AdminComponent {
   ];
 
   setTab(tab: Tab) {
-    this.activeTab = tab;
+    this.activeTab.set(tab);
   }
 
   // ── Actions: criar encomenda ──────────────────────────────────
   createShipment() {
-    this.shipmentLoading = true;
-    this.shipmentError = null;
-    this.createdShipment = null;
+    this.shipmentLoading.set(true);
+    this.shipmentError.set(null);
+    this.createdShipment.set(null);
 
     this.shipmentService.create(this.shipmentForm).subscribe({
       next: (res) => {
-        this.createdShipment = res;
-        this.shipmentLoading = false;
+        this.createdShipment.set(res);
+        this.shipmentLoading.set(false);
         this.shipmentForm = { sender: '', recipient: '', origin: '', destination: '', weightKg: 0 };
       },
       error: (err) => {
-        this.shipmentLoading = false;
-        this.shipmentError = err.status === 409
+        this.shipmentLoading.set(false);
+        this.shipmentError.set(err.status === 409
           ? 'Código de rastreio já existe (LWT). Tente novamente.'
-          : 'Erro ao criar encomenda. Verifique os dados.';
+          : 'Erro ao criar encomenda. Verifique os dados.');
       }
     });
   }
@@ -78,32 +93,33 @@ export class AdminComponent {
   // ── Actions: buscar encomenda ─────────────────────────────────
   searchShipment() {
     if (!this.searchCode.trim()) return;
-    this.searchLoading = true;
-    this.searchError = null;
-    this.foundShipment = null;
-    this.deleteConfirm = false;
+    this.searchLoading.set(true);
+    this.searchError.set(null);
+    this.foundShipment.set(null);
+    this.deleteConfirm.set(false);
 
     this.shipmentService.getByCode(this.searchCode.trim().toUpperCase()).subscribe({
       next: (res) => {
-        this.foundShipment = res;
-        this.searchLoading = false;
+        this.foundShipment.set(res);
+        this.searchLoading.set(false);
       },
       error: (err) => {
-        this.searchLoading = false;
-        this.searchError = err.status === 404 ? 'Encomenda não encontrada.' : 'Erro ao buscar encomenda.';
+        this.searchLoading.set(false);
+        this.searchError.set(err.status === 404 ? 'Encomenda não encontrada.' : 'Erro ao buscar encomenda.');
       }
     });
   }
 
   deleteShipment() {
-    if (!this.foundShipment) return;
-    this.shipmentService.delete(this.foundShipment.trackingCode).subscribe({
+    const shipment = this.foundShipment();
+    if (!shipment) return;
+    this.shipmentService.delete(shipment.trackingCode).subscribe({
       next: () => {
-        this.foundShipment = null;
+        this.foundShipment.set(null);
         this.searchCode = '';
-        this.deleteConfirm = false;
+        this.deleteConfirm.set(false);
       },
-      error: () => { this.searchError = 'Erro ao deletar encomenda.'; }
+      error: () => { this.searchError.set('Erro ao deletar encomenda.'); }
     });
   }
 
@@ -114,21 +130,58 @@ export class AdminComponent {
   // ── Actions: registrar evento ─────────────────────────────────
   registerEvent() {
     if (!this.eventCode.trim()) return;
-    this.eventLoading = true;
-    this.eventError = null;
-    this.eventSuccess = false;
+    this.eventLoading.set(true);
+    this.eventError.set(null);
+    this.eventSuccess.set(false);
 
     this.shipmentService.registerEvent(this.eventCode.trim().toUpperCase(), this.eventForm).subscribe({
       next: () => {
-        this.eventSuccess = true;
-        this.eventLoading = false;
+        this.eventSuccess.set(true);
+        this.eventLoading.set(false);
         this.eventForm = { state: '', city: '', status: 3, latitude: null, longitude: null, notes: null };
       },
       error: (err) => {
-        this.eventLoading = false;
-        this.eventError = err.status === 404
+        this.eventLoading.set(false);
+        this.eventError.set(err.status === 404
           ? 'Encomenda não encontrada.'
-          : 'Endpoint ainda não implementado no backend (POST /shipments/{code}/eventos).';
+          : 'Erro ao registrar evento.');
+      }
+    });
+  }
+
+  // ── Actions: hub activity ────────────────────────────────────
+  loadHubActivity() {
+    if (!this.hubCity.trim()) return;
+    this.hubLoading.set(true);
+    this.hubError.set(null);
+    this.hubResult.set(null);
+
+    this.hubService.getCityActivity(this.hubCity.trim()).subscribe({
+      next: (res) => {
+        this.hubResult.set(res);
+        this.hubLoading.set(false);
+      },
+      error: () => {
+        this.hubLoading.set(false);
+        this.hubError.set('Erro ao buscar atividade do hub.');
+      }
+    });
+  }
+
+  // ── Actions: status activity ─────────────────────────────────
+  loadStatusActivity() {
+    this.statusLoading.set(true);
+    this.statusError.set(null);
+    this.statusResult.set(null);
+
+    this.hubService.getStatusActivity(this.statusSelectedId).subscribe({
+      next: (res) => {
+        this.statusResult.set(res);
+        this.statusLoading.set(false);
+      },
+      error: () => {
+        this.statusLoading.set(false);
+        this.statusError.set('Erro ao buscar pacotes por status.');
       }
     });
   }

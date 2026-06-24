@@ -330,3 +330,66 @@ nav {
   color: var(--text-muted);
   font-weight: 600;
 }
+
+// ── QR Code ───────────────────────────────────────────────────
+.qr-wrapper {
+  margin: 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.qr-img {
+  width: 160px;
+  height: 160px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+// ── Activity tables ───────────────────────────────────────────
+.activity-result {
+  margin-top: 1rem;
+}
+
+.activity-summary {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+
+  th {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    background: #f8fafc;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border);
+  }
+
+  td {
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid #f1f5f9;
+    color: var(--text-primary);
+
+    code { font-size: 0.82rem; }
+  }
+
+  tr:last-child td { border-bottom: none; }
+}
+
+.status-select {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: white;
+}

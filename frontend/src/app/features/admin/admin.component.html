@@ -6,19 +6,17 @@
       <span class="sidebar-title">JPS Admin</span>
     </div>
     <nav>
-      <button [class.active]="activeTab === 'shipments'" (click)="setTab('shipments')">
+      <button [class.active]="activeTab() === 'shipments'" (click)="setTab('shipments')">
         Encomendas
       </button>
-      <button [class.active]="activeTab === 'events'" (click)="setTab('events')">
+      <button [class.active]="activeTab() === 'events'" (click)="setTab('events')">
         Registrar Evento
       </button>
-      <button [class.active]="activeTab === 'hub'" (click)="setTab('hub')" class="nav-soon">
+      <button [class.active]="activeTab() === 'hub'" (click)="setTab('hub')">
         Atividade por Hub
-        <span class="soon-tag">em breve</span>
       </button>
-      <button [class.active]="activeTab === 'status'" (click)="setTab('status')" class="nav-soon">
+      <button [class.active]="activeTab() === 'status'" (click)="setTab('status')">
         Pacotes por Status
-        <span class="soon-tag">em breve</span>
       </button>
     </nav>
     <div class="sidebar-footer">
@@ -30,7 +28,7 @@
   <main class="main-content">
 
     <!-- ── Tab: Encomendas ── -->
-    @if (activeTab === 'shipments') {
+    @if (activeTab() === 'shipments') {
       <section class="section">
         <h2>Nova Encomenda</h2>
         <p class="section-desc">
@@ -59,22 +57,28 @@
             <input type="number" [(ngModel)]="shipmentForm.weightKg" name="weightKg" min="0.01" step="0.01" required placeholder="0.00" />
           </label>
           <div class="form-actions">
-            <button type="submit" class="btn-primary" [disabled]="shipmentLoading">
-              {{ shipmentLoading ? 'Criando…' : 'Criar Encomenda' }}
+            <button type="submit" class="btn-primary" [disabled]="shipmentLoading()">
+              {{ shipmentLoading() ? 'Criando…' : 'Criar Encomenda' }}
             </button>
           </div>
         </form>
 
-        @if (shipmentError) {
-          <div class="alert alert-error">{{ shipmentError }}</div>
+        @if (shipmentError()) {
+          <div class="alert alert-error">{{ shipmentError() }}</div>
         }
 
-        @if (createdShipment) {
+        @if (createdShipment(); as shipment) {
           <div class="alert alert-success">
             <p><strong>Encomenda criada!</strong></p>
-            <p>Código: <code>{{ createdShipment.trackingCode }}</code></p>
-            <p>{{ createdShipment.origin }} → {{ createdShipment.destination }}</p>
-            <button class="btn-link" (click)="viewTracking(createdShipment.trackingCode)">
+            <p>Código: <code>{{ shipment.trackingCode }}</code></p>
+            <p>{{ shipment.origin }} → {{ shipment.destination }}</p>
+            @if (shipment.qrCode) {
+              <div class="qr-wrapper">
+                <p class="label">QR Code de rastreio</p>
+                <img [src]="'data:image/png;base64,' + shipment.qrCode" alt="QR Code" class="qr-img" />
+              </div>
+            }
+            <button class="btn-link" (click)="viewTracking(shipment.trackingCode)">
               Ver rastreio público →
             </button>
           </div>
@@ -92,44 +96,44 @@
             placeholder="Código de rastreio"
             (keydown.enter)="searchShipment()"
           />
-          <button class="btn-primary" (click)="searchShipment()" [disabled]="searchLoading || !searchCode.trim()">
-            {{ searchLoading ? 'Buscando…' : 'Buscar' }}
+          <button class="btn-primary" (click)="searchShipment()" [disabled]="searchLoading() || !searchCode.trim()">
+            {{ searchLoading() ? 'Buscando…' : 'Buscar' }}
           </button>
         </div>
 
-        @if (searchError) {
-          <div class="alert alert-error">{{ searchError }}</div>
+        @if (searchError()) {
+          <div class="alert alert-error">{{ searchError() }}</div>
         }
 
-        @if (foundShipment) {
+        @if (foundShipment(); as shipment) {
           <div class="shipment-card">
             <div class="shipment-card-header">
               <div>
                 <p class="label">Código</p>
-                <code class="code-big">{{ foundShipment.trackingCode }}</code>
+                <code class="code-big">{{ shipment.trackingCode }}</code>
               </div>
               <div class="shipment-actions">
-                <button class="btn-outline" (click)="viewTracking(foundShipment.trackingCode)">
+                <button class="btn-outline" (click)="viewTracking(shipment.trackingCode)">
                   Ver rastreio
                 </button>
-                @if (!deleteConfirm) {
-                  <button class="btn-danger-outline" (click)="deleteConfirm = true">Deletar</button>
+                @if (!deleteConfirm()) {
+                  <button class="btn-danger-outline" (click)="deleteConfirm.set(true)">Deletar</button>
                 } @else {
                   <span class="confirm-row">
                     <span>Confirmar?</span>
                     <button class="btn-danger" (click)="deleteShipment()">Sim</button>
-                    <button class="btn-outline" (click)="deleteConfirm = false">Não</button>
+                    <button class="btn-outline" (click)="deleteConfirm.set(false)">Não</button>
                   </span>
                 }
               </div>
             </div>
             <div class="shipment-details">
-              <div><span class="label">Remetente</span><p>{{ foundShipment.sender }}</p></div>
-              <div><span class="label">Destinatário</span><p>{{ foundShipment.recipient }}</p></div>
-              <div><span class="label">Origem</span><p>{{ foundShipment.origin }}</p></div>
-              <div><span class="label">Destino</span><p>{{ foundShipment.destination }}</p></div>
-              <div><span class="label">Peso</span><p>{{ foundShipment.weightKg }} kg</p></div>
-              <div><span class="label">Criado em</span><p>{{ formatDate(foundShipment.createdAt) }}</p></div>
+              <div><span class="label">Remetente</span><p>{{ shipment.sender }}</p></div>
+              <div><span class="label">Destinatário</span><p>{{ shipment.recipient }}</p></div>
+              <div><span class="label">Origem</span><p>{{ shipment.origin }}</p></div>
+              <div><span class="label">Destino</span><p>{{ shipment.destination }}</p></div>
+              <div><span class="label">Peso</span><p>{{ shipment.weightKg }} kg</p></div>
+              <div><span class="label">Criado em</span><p>{{ formatDate(shipment.createdAt) }}</p></div>
             </div>
           </div>
         }
@@ -137,13 +141,13 @@
     }
 
     <!-- ── Tab: Registrar Evento ── -->
-    @if (activeTab === 'events') {
+    @if (activeTab() === 'events') {
       <section class="section">
         <h2>Registrar Evento</h2>
         <p class="section-desc">
           A escrita ocorre simultaneamente em <code>events_by_code</code>,
           <code>events_by_city</code> e <code>events_by_status</code>
-          via <strong>Cassandra Logged Batch</strong>.
+          via <strong>Cassandra Logged Batch</strong> com TTL de 90 dias.
         </p>
 
         <form class="form-grid" (ngSubmit)="registerEvent()">
@@ -180,42 +184,143 @@
             <input [(ngModel)]="eventForm.notes" name="notes" placeholder="Ex: Pacote aguardando triagem" />
           </label>
           <div class="form-actions full-width">
-            <button type="submit" class="btn-primary" [disabled]="eventLoading">
-              {{ eventLoading ? 'Registrando…' : 'Registrar Evento' }}
+            <button type="submit" class="btn-primary" [disabled]="eventLoading()">
+              {{ eventLoading() ? 'Registrando…' : 'Registrar Evento' }}
             </button>
           </div>
         </form>
 
-        @if (eventError) {
-          <div class="alert alert-error">{{ eventError }}</div>
+        @if (eventError()) {
+          <div class="alert alert-error">{{ eventError() }}</div>
         }
-        @if (eventSuccess) {
+        @if (eventSuccess()) {
           <div class="alert alert-success">Evento registrado com sucesso!</div>
         }
       </section>
     }
 
     <!-- ── Tab: Hub Activity ── -->
-    @if (activeTab === 'hub') {
+    @if (activeTab() === 'hub') {
       <section class="section">
-        <h2>Atividade por Hub</h2>
-        <div class="coming-soon">
-          <span>🚧</span>
-          <p>Endpoint <code>GET /hubs/&#123;cidade&#125;/hoje</code> ainda não implementado no backend.</p>
-          <p class="note">Requer tabela <code>events_by_city</code> e serviço correspondente.</p>
+        <h2>Atividade por Hub — Hoje</h2>
+        <p class="section-desc">
+          Consulta a tabela <code>events_by_city</code> com
+          <code>date_bucket = today()</code>.
+        </p>
+
+        <div class="search-row">
+          <input
+            [(ngModel)]="hubCity"
+            name="hubCity"
+            placeholder="Nome da cidade (Ex: Campinas)"
+            (keydown.enter)="loadHubActivity()"
+          />
+          <button class="btn-primary" (click)="loadHubActivity()" [disabled]="hubLoading() || !hubCity.trim()">
+            {{ hubLoading() ? 'Buscando…' : 'Ver hoje' }}
+          </button>
         </div>
+
+        @if (hubError()) {
+          <div class="alert alert-error">{{ hubError() }}</div>
+        }
+
+        @if (hubResult(); as result) {
+          <div class="activity-result">
+            <p class="activity-summary">
+              <strong>{{ result.city }}</strong> — {{ result.events.length }} evento(s) hoje
+            </p>
+            @if (result.events.length === 0) {
+              <p class="empty">Nenhum evento registrado nessa cidade hoje.</p>
+            } @else {
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Horário</th>
+                    <th>Status</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (event of result.events; track event.trackingCode) {
+                    <tr>
+                      <td><code>{{ event.trackingCode }}</code></td>
+                      <td>{{ formatDate(event.timestamp) }}</td>
+                      <td>{{ event.status.name }}</td>
+                      <td>
+                        <button class="btn-link" (click)="viewTracking(event.trackingCode)">
+                          Ver →
+                        </button>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+          </div>
+        }
       </section>
     }
 
     <!-- ── Tab: Status View ── -->
-    @if (activeTab === 'status') {
+    @if (activeTab() === 'status') {
       <section class="section">
-        <h2>Pacotes por Status</h2>
-        <div class="coming-soon">
-          <span>🚧</span>
-          <p>Endpoint <code>GET /status/&#123;status&#125;/hoje</code> ainda não implementado no backend.</p>
-          <p class="note">Requer tabela <code>events_by_status</code> e serviço correspondente.</p>
+        <h2>Pacotes por Status — Hoje</h2>
+        <p class="section-desc">
+          Consulta a tabela <code>events_by_status</code> com
+          <code>date_bucket = today()</code>.
+        </p>
+
+        <div class="search-row">
+          <select [(ngModel)]="statusSelectedId" name="statusSelect" class="status-select">
+            @for (s of statusOptions; track s.id) {
+              <option [value]="s.id">{{ s.id }} — {{ s.name }}</option>
+            }
+          </select>
+          <button class="btn-primary" (click)="loadStatusActivity()" [disabled]="statusLoading()">
+            {{ statusLoading() ? 'Buscando…' : 'Ver hoje' }}
+          </button>
         </div>
+
+        @if (statusError()) {
+          <div class="alert alert-error">{{ statusError() }}</div>
+        }
+
+        @if (statusResult(); as result) {
+          <div class="activity-result">
+            <p class="activity-summary">
+              <strong>{{ result.status.name }}</strong> — {{ result.events.length }} pacote(s) hoje
+            </p>
+            @if (result.events.length === 0) {
+              <p class="empty">Nenhum pacote com esse status hoje.</p>
+            } @else {
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Horário</th>
+                    <th>Cidade</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (event of result.events; track event.trackingCode) {
+                    <tr>
+                      <td><code>{{ event.trackingCode }}</code></td>
+                      <td>{{ formatDate(event.timestamp) }}</td>
+                      <td>{{ event.city }}</td>
+                      <td>
+                        <button class="btn-link" (click)="viewTracking(event.trackingCode)">
+                          Ver →
+                        </button>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+          </div>
+        }
       </section>
     }
 
