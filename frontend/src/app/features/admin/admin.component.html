@@ -167,7 +167,7 @@
             Status
             <select [(ngModel)]="eventForm.status" name="status">
               @for (s of statusOptions; track s.id) {
-                <option [value]="s.id">{{ s.id }} — {{ s.name }}</option>
+                <option [ngValue]="s.id">{{ s.id }} — {{ s.name }}</option>
               }
             </select>
           </label>
@@ -274,7 +274,7 @@
         <div class="search-row">
           <select [(ngModel)]="statusSelectedId" name="statusSelect" class="status-select">
             @for (s of statusOptions; track s.id) {
-              <option [value]="s.id">{{ s.id }} — {{ s.name }}</option>
+              <option [ngValue]="s.id">{{ s.id }} — {{ s.name }}</option>
             }
           </select>
           <button class="btn-primary" (click)="loadStatusActivity()" [disabled]="statusLoading()">
