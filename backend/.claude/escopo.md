@@ -277,6 +277,13 @@ A API de registro de eventos é naturalmente idempotente.
 
 ---
 
+### 10. Mapa da Rota (Leaflet)
+Na página de rastreio público, os eventos que possuem `latitude`/`longitude` são plotados
+em um mapa Leaflet (OpenStreetMap) com a polyline da rota percorrida e marcadores por hub.
+Atualiza junto com a timeline quando chega um novo evento via SSE.
+
+---
+
 ## Estrutura do Projeto
 
 ```
@@ -321,16 +328,16 @@ src/main/java/com/jps/jps/
     │   ├── EventByCityRepository.java @Query com datebucket (sem underscore)
     │   ├── EventByCityService.java    devolve CityActivityResponse
     │   ├── EventByCityController.java GET /hubs/{city}/hoje
-    │   ├── CityEventItem.java         DTO de um item na lista de hub
-    │   └── CityActivityResponse.java  DTO {city, date, total, events}
+    │   ├── CityEventItem.java         DTO de um item na lista de hub {trackingCode, timestamp, status}
+    │   └── CityActivityResponse.java  DTO {city, date, events}
     │
     └── eventByStatus/
         ├── EventByStatus.java         @Table("events_by_status") — partition composta (status INT, dateBucket)
         ├── EventByStatusRepository.java @Query com datebucket (sem underscore)
         ├── EventByStatusService.java  devolve StatusActivityResponse
         ├── EventByStatusController.java GET /status/{statusId}/hoje
-        ├── StatusEventItem.java       DTO de um item na lista de status
-        └── StatusActivityResponse.java DTO {statusId, statusName, date, total, events}
+        ├── StatusEventItem.java       DTO de um item na lista de status {trackingCode, timestamp, city}
+        └── StatusActivityResponse.java DTO {status: {id, name}, date, events}
 ```
 
 ---
@@ -398,13 +405,25 @@ Se sem eventos → `currentStatus = {id:0, name:"Registrado"}`.
 ### `GET /hubs/{city}/hoje` — atividade de hub
 
 ```json
-{ "city": "Campinas", "date": "2026-06-24", "total": 3, "events": [ ... ] }
+{
+  "city": "Campinas",
+  "date": "2026-06-24",
+  "events": [
+    { "trackingCode": "BR9A3C12F40", "timestamp": "...", "status": { "id": 3, "name": "Em trânsito" } }
+  ]
+}
 ```
 
 ### `GET /status/{statusId}/hoje` — atividade por status
 
 ```json
-{ "statusId": 3, "statusName": "Em trânsito", "date": "2026-06-24", "total": 2, "events": [ ... ] }
+{
+  "status": { "id": 3, "name": "Em trânsito" },
+  "date": "2026-06-24",
+  "events": [
+    { "trackingCode": "BR9A3C12F40", "timestamp": "...", "city": "Campinas" }
+  ]
+}
 ```
 
 ---
@@ -455,4 +474,3 @@ registrado em `CassandraConfig`. Status é serializado como `{id, name}` em toda
 | Dashboard com métricas globais | Requer aggregações que o Cassandra não suporta — anti-pattern |
 | Relatórios administrativos | Consultas ad-hoc não funcionam com tabelas de access pattern fixo |
 | Cache Redis | Cassandra já é O(1) por partition key — sem gargalo real a resolver |
-| Mapa da rota (Leaflet) | Fora do escopo do frontend implementado |
