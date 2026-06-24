@@ -1,5 +1,8 @@
 package com.jps.jps.shipment;
 
+import com.jps.jps.event.eventByCode.EventByCodeService;
+import com.jps.jps.event.eventByCode.EventRequest;
+import com.jps.jps.event.eventByCode.TimelineEventResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -10,9 +13,11 @@ import org.springframework.web.bind.annotation.*;
 public class ShipmentController {
 
     private final ShipmentService shipmentService;
+    private final EventByCodeService eventByCodeService;
 
-    public ShipmentController(ShipmentService shipmentService) {
+    public ShipmentController(ShipmentService shipmentService, EventByCodeService eventByCodeService) {
         this.shipmentService = shipmentService;
+        this.eventByCodeService = eventByCodeService;
     }
 
     @PostMapping
@@ -29,5 +34,12 @@ public class ShipmentController {
     public ResponseEntity<Void> delete(@PathVariable String trackingCode) {
         shipmentService.delete(trackingCode);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{trackingCode}/eventos")
+    public ResponseEntity<TimelineEventResponse> addEvent(
+            @PathVariable String trackingCode,
+            @RequestBody @Valid EventRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(eventByCodeService.save(trackingCode, request));
     }
 }
