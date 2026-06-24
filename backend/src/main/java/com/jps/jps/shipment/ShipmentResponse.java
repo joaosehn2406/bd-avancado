@@ -10,9 +10,10 @@ public record ShipmentResponse(
         String origin,
         String destination,
         Instant createdAt,
-        BigDecimal weightKg
+        BigDecimal weightKg,
+        String qrCode
 ) {
-    public static ShipmentResponse from(Shipment shipment) {
+    public static ShipmentResponse from(Shipment shipment, String qrCode) {
         return new ShipmentResponse(
                 shipment.trackingCode(),
                 shipment.sender(),
@@ -20,7 +21,12 @@ public record ShipmentResponse(
                 shipment.origin(),
                 shipment.destination(),
                 shipment.createdAt(),
-                shipment.weightKg()
+                shipment.weightKg(),
+                qrCode
         );
+    }
+
+    public static ShipmentResponse from(Shipment shipment) {
+        return from(shipment, null);
     }
 }
