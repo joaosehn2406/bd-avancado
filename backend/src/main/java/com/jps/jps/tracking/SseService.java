@@ -24,7 +24,8 @@ public class SseService {
     }
 
     public void publish(String trackingCode, Object payload) {
-        List<SseEmitter> list = emitters.getOrDefault(trackingCode, List.of());
+        List<SseEmitter> list = emitters.get(trackingCode);
+        if (list == null || list.isEmpty()) return;
         list.removeIf(emitter -> {
             try {
                 emitter.send(SseEmitter.event().data(payload));
